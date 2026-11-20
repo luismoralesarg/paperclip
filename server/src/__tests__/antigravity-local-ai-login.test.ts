@@ -284,3 +284,26 @@ describe("Google local sign-in service admission", () => {
     await expect(access(f.home)).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
+
+describe("local sign-in attempt resume", () => {
+  it.each(["anthropic", "google"] as const)("relaunches an ended %s browser process when the user returns to the same attempt", async provider => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "paperclip-local-login-resume-"))); roots.push(root);
+    mocks.root.mockReturnValue(root);
+    const target = { ...intent, provider };
+    const ended: LocalBrowserLoginState = { authorizationUrl: "https://claude.com/cai/oauth/authorize?first", abort: vi.fn() };
+    const fresh: LocalBrowserLoginState = { authorizationUrl: "https://claude.com/cai/oauth/authorize?second", abort: vi.fn() };
+    mocks.browser.mockReturnValueOnce(ended).mockReturnValueOnce(fresh);
+    mocks.credential.mockRejectedValue(new Error("not signed in"));
+    const db = database(), service = localAiLoginService(db);
+    db.selections.push([], [{ id: "local-environment", driver: "local", status: "active" }]);
+    const attempt = await service.start("company", "user", target);
+    ended.outcome = "failure";
+    db.selections.push([db.session]);
+    expect(await service.start("company", "user", target)).toEqual(attempt);
+    expect(mocks.browser).toHaveBeenCalledTimes(2);
+    db.selections.push([db.session]);
+    expect(await service.check("company", "user", target, attempt.sessionId))
+      .toEqual({ status: "sign_in_required", authorizationUrl: fresh.authorizationUrl, code: undefined });
+    fresh.outcome = "failure";
+  });
+});
