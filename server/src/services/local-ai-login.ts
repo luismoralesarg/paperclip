@@ -147,7 +147,12 @@ export function localAiLoginService(db: Db) {
     } finally { clearTimeout(timeout); }
   }
   function ensureBrowserLogin(id: string, provider: string) {
-    if (provider === "xai" || browserLogins.has(id)) return;
+    if (provider === "xai") return;
+    // The CLI exchange has a 5-minute timeout, but the attempt stays open for
+    // 30 minutes. A returning user gets a fresh exchange in the same home, the
+    // same way a server restart does. A failed run never writes a credential.
+    const current = browserLogins.get(id);
+    if (current && current.outcome !== "failure") return;
     browserLogins.set(id, startLocalBrowserLogin(provider as "anthropic" | "openai" | "google", loginHome(id)));
   }
   async function reapExpired() {
